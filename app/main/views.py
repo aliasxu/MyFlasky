@@ -1,37 +1,52 @@
 #!/usr/bin/env python
 #_*_ coding:utf-8 _*_
 
-from flask import render_template,session ,redirect,url_for,current_app,flash
+from flask import render_template,session ,redirect,url_for,current_app,flash,request
 from .. import db
-from ..models import User
+from ..models import User,Role,Post,Permission
 from ..email import send_email
 from . import main
-from .forms import NameForm,EditProfileForm,EditProfileAdminForm
+from .forms import NameForm,EditProfileForm,EditProfileAdminForm,PostForm
 from flask_login import login_required,current_user
 from ..decorators import admin_required
 
 @main.route('/', methods=['GET','POST'])
 def index():
-    form = NameForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(username=form.name.data).first()
-        if user is None:
-            user = User(username=form.name.data)
-            db.session.add(user)
-            session['known'] = False
-            if current_app.config['FLASKY_ADMIN']:
-                send_email(current_app.config['FLASKY_ADMIN'],'New User','mail/new_user',user=user)
+    # form = NameForm()
+    # if form.validate_on_submit():
+    #     user = User.query.filter_by(username=form.name.data).first()
+    #     if user is None:
+    #         user = User(username=form.name.data)
+    #         db.session.add(user)
+    #         session['known'] = False
+    #         if current_app.config['FLASKY_ADMIN']:
+    #             send_email(current_app.config['FLASKY_ADMIN'],'New User','mail/new_user',user=user)
+    #
+    #     else:
+    #         session['known'] = True
+    #     session['name'] = form.name.data
+    #     return redirect(url_for('.index'))
+    # return render_template('index.html',form = form ,name =session.get('name'),known = session.get('known',False))
 
-        else:
-            session['known'] = True
-        session['name'] = form.name.data
+    form = PostForm()
+    if current_user.can(Permission.WRITE_ARTICLES) and form.validate_on_submit():
+        post = Post(body=form.body.data,author=current_user._get_current_object())
+        print type(current_user._get_current_object())
+        db.session.add(post)
         return redirect(url_for('.index'))
-    return render_template('index.html',form = form ,name =session.get('name'),known = session.get('known',False))
+    page = request.args.get('page',1,type=int)
+    pagination = Post.query.order_by(Post.timestamp.desc()).paginate(page,per_page=current_app.config['FLASKY_POSTS_PER_PAGE'],error_out=False)
+    posts = pagination.items
+    print posts
+    return render_template('index.html',form=form,posts=posts,pagination=pagination)
 
 @main.route('/user/<username>')
 def user(username):
     user = User.query.filter_by(username=username).first()
-    return render_template('user.html',user=user)
+    posts = user.posts.order_by(Post.timestamp.desc()).all()
+    print user.posts
+    print type(user.posts)
+    return render_template('user.html',user=user,posts=posts)
 
 
 #普通用户修改用户资料视图函数
