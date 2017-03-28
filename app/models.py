@@ -58,6 +58,17 @@ class Role(db.Model):
         return '<Role %r>' % self.name
 
 
+#关注者和被关注者模型
+class Follow(db.Model):
+    __tablename__ = 'follows'
+    #关注者id
+    follower_id = db.Column(db.Integer,db.ForeignKey('users.id'),primary_key=True)
+    #被关注者id
+    followed_id = db.Column(db.Integer,db.ForeignKey('users.id'),primary_key=True)
+    #关注时间
+    timestamp = db.Column(db.DateTime,default=datetime.utcnow)
+
+
 #用户模型
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
@@ -74,6 +85,13 @@ class User(UserMixin, db.Model):
     last_since = db.Column(db.DateTime(), default=datetime.utcnow)
     avatar_hash = db.Column(db.String(32))
     posts = db.relationship('Post',backref='author',lazy='dynamic')
+    #关注我的人
+    followed = db.relationship('Follow',foreign_keys=[Follow.follower_id],backref=db.backref('follower',lazy='joined'),
+                               lazy='dynamic',cascade='all,delete-orphan')
+
+    #我关注的人
+    followers = db.relationship('Follow',foreign_keys=[Follow.followed_id],backref=db.backref('followed',lazy='joined'),
+                               lazy='dynamic',cascade='all,delete-orphan')
 
     @staticmethod
     def generate_fake(count=100):
@@ -196,6 +214,33 @@ class User(UserMixin, db.Model):
             self.email.encode('utf-8')).hexdigest()
         return '{url}/{hash}?s={size}&d={default}&r={rating}'.format(
             url=url, hash=hash, size=size, default=default, rating=rating)
+
+
+    #创建关注关系
+    def follow(self,user):
+        if not self.is_following(user):
+            f = Follow(follower=self,followed=user)
+            db.session.add(f)
+
+    #解除关注关系
+    def unfollow(self,user):
+        f = self.followed.filter_by(followed_id=user.id).first()
+        if f:
+            db.session.delete(f)
+
+    #判断是否关注
+    def is_following(self,user):
+        return self.followed.filter_by(followed_id=user.id).first() is not None
+
+    #判断是否被关注
+    def is_followed_by(self,user):
+        return self.followers.filter_by(follower_id=user.id).first() is not None
+
+    #关注者的文章
+    @property
+    def followed_posts(self):
+        return Post.query.join(Follow,Follow.followed_id == Post.author_id).filter(Follow.follower_id == self.id)
+
 
     def __repr__(self):
         return '<User %r>' % self.username
