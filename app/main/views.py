@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #_*_ coding:utf-8 _*_
 
-from flask import render_template,session ,redirect,url_for,current_app,flash,request
+from flask import render_template,session ,redirect,url_for,current_app,flash,request,abort
 from .. import db
 from ..models import User,Role,Post,Permission
 from ..email import send_email
@@ -93,3 +93,27 @@ def edit_profile_admin(id):
     form.location.data = user.location
     form.about_me.data = user.about_me
     return render_template('edit_profile.html', form=form, user=user)
+
+
+#固定文章链接
+@main.route('/post/<int:id>')
+def post(id):
+    post = Post.query.get_or_404(id)
+    return render_template('post.html',posts=[post])
+
+#编辑文章
+@main.route('/edit/<int:id>',methods=['GET','POST'])
+@login_required
+def edit(id):
+    post = Post.query.get_or_404(id)
+    if current_user != post.author and not current_user.can(Permission.ADMINISTER):
+        abort(403)
+
+    form = PostForm()
+    if form.validate_on_submit():
+        post.body = form.body.data
+        db.session.add(post)
+        flash('The post has been updated')
+        return redirect(url_for('.post',id=post.id))
+    form.body.data = post.body
+    return render_template('edit_post.html',form=form)
